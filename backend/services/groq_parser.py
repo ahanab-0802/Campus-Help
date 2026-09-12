@@ -20,6 +20,7 @@ def _get_client()->Groq:
         if not api_key:
             raise ValueError("GROQ_API_KEY environment variable not set")
         _client=Groq(api_key=api_key)
+        #_ before client is a convention to indicate that this variable is intended for internal use within the module and should not be accessed directly from outside the module. It helps to avoid naming conflicts and makes it clear that this variable is not part of the public API of the module.
     return _client
 
 RESUME_SYSTEM_PROMPT = (
@@ -83,8 +84,9 @@ def _call_groq(client:Groq, system_prompt:str, user_prompt:str)->str:
             {'role': 'system', 'content': system_prompt},
             {'role': 'user', 'content': user_prompt}
         ],
+        #temperature means how much randomness to introduce into the model's responses. A temperature of 0.0 means the model will always choose the most likely next word, leading to more deterministic and focused outputs. Higher temperatures (e.g., 0.7) would make the model's responses more varied and creative, but potentially less accurate or relevant.
         temperature=0.0,
-        max_tokens=4096
+        max_tokens=4096 #roughly 3000 words, which is more than enough for a resume or job description
     )
 
     return response.choices[0].message.content.strip()
@@ -112,6 +114,7 @@ def parse_resume(raw_text: str)->Dict:
 
     client=_get_client()
     prompt=RESUME_USER_PROMPT.format(raw_text=raw_text)
+    #.raw_text=raw_text is a placeholder in the RESUME_USER_PROMPT string that will be replaced with the actual resume text when the prompt is formatted. This allows the prompt to dynamically include the specific resume content that needs to be parsed.
     raw_response=_call_groq(client, RESUME_SYSTEM_PROMPT, prompt)
     result=_try_parse_json(raw_response)
 
@@ -169,6 +172,7 @@ def parse_job_description(raw_text: str) -> Dict:
     if result is not None:
         return _validate_jd_result(result)
 
+    #works if result is None, meaning the first attempt to parse the JSON failed. In that case, it logs a warning and retries with a stricter prompt that emphasizes returning only valid JSON. If the second attempt also fails, it raises a ValueError with the raw response for debugging.
     logger.warning("Groq JD parse: first attempt returned invalid JSON, retrying...")
     strict_prompt = (
         "Your previous response was not valid JSON. "
@@ -200,6 +204,8 @@ def _validate_jd_result(result: dict) -> dict:
     for key, default in defaults.items():
         if key not in result or result[key] is None:
             result[key] = default
+
+        #isInstance checks if the default value is a list and if the corresponding value in the result is not a list. If the result value is not a list, it replaces it with the default list. This ensures that all expected fields are present and have the correct data type, preventing potential errors in downstream processing.
         if isinstance(default, list) and not isinstance(result[key], list):
             result[key] = default
 

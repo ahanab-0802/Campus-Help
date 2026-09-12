@@ -4,7 +4,7 @@ from typing import Tuple, Optional, Tuple
 
 import pdfplumber
 from docx import Document
-import PyPDF2
+import PyPDF2 #fallback pdf parser
 
 from backend.utils.file_utils import(
     FileParsingError, 
@@ -22,6 +22,7 @@ from backend.core.config import (
     SUPPORTED_MIME_TYPES
 )
 
+#custom exceptions for file validation and parsing
 class FileParsingError(Exception):
     pass
 
@@ -38,12 +39,17 @@ def validate_file(file_data:bytes, filename:str)->Tuple[bool, str, Optional[str]
         ), None
     
     if file_size_bytes==0:
-        return False, 'uploade file is empty...please check the file you have uploaded and try again'
-    
+        return False, 'Uploaded file is empty...please check the file you have uploaded and try again.'
+
+    #try..except block to handle potential errors from the magic library
+    #2 step architecture
     try:
+        #magic checks the file type based on its content, not just the extension
+        #without this, a user could upload a .pdf file that is actually a .docx file, which could cause parsing errors later
+        #magic works on internal file signatures, so it is more reliable than checking the file extension alone
         mime_type=magic.from_buffer(file_data, mime=True)
     except Exception as e:
-        return False, f"error deteminin the file type : {e}", None
+        return False, f"error deteminined the file type : {e}", None
     
     if mime_type not in SUPPORTED_MIME_TYPES:
         supported=', '.join(SUPPORTED_MIME_TYPES.keys()).upper()
@@ -55,7 +61,8 @@ def validate_file(file_data:bytes, filename:str)->Tuple[bool, str, Optional[str]
     
 
     return True, '', SUPPORTED_MIME_TYPES[mime_type]
-
+    #SUPPORTED_MINME_TYPES[mime_type] returns the short name for the file type (e.g., 'pdf', 'docx')
+    #Example: if mime_type is 'application/pdf', it returns 'pdf' which is used later in the parsing logic
 def _extract_pdf_hyperlinks(file_data: bytes) -> str:
     urls = []
     try:
@@ -136,6 +143,7 @@ def extract_text_from_pdf(file_data: bytes) -> str:
     )
     
         if used_fallback:
+            #context is set to 'resume_parser' to indicate the source of the log message
             log_info('PDF EXTRACTION succeded using the PyPDF2 fallback', context='resume_parser')
         return result
         
@@ -148,6 +156,7 @@ def extract_text_from_pdf(file_data: bytes) -> str:
         ) from e
     
 
+#docx extraction is quite complex because docx files can contain text in paragraphs, tables, and hyperlinks.
 def extract_text_from_docx(file_data: bytes) -> str:
     try:
         doc = Document(io.BytesIO(file_data))
@@ -201,6 +210,7 @@ def extract_text_from_doc(file_data: bytes) -> str:
         'You can convert using Microsoft Word, Google Docs, or online tools.'
     )
 
+#orchestrator function to call the appropriate extraction function based on file type
 def extract_text(file_data:bytes, file_type:str)->str:
     if file_type=='pdf':
         return extract_text_from_pdf(file_data)
@@ -222,7 +232,7 @@ def parse_resume_file(file_data: bytes, filename:str)->Tuple[str, dict]:
     try:
         is_valid, error_msg, file_type=validate_file(file_data, filename)
         if not is_valid:
-            log_warning(f'valiudation failed for file {filename}', context='parse_resume_file')
+            log_warning(f'Validation failed for file {filename}', context='parse_resume_file')
             raise FileValidationError(error_msg)
     
     except FileValidationError as e:
